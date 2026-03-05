@@ -1,0 +1,3 @@
+{
+  "extends": "@subbox/config/tsconfig.base.json"
+}

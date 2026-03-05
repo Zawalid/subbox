@@ -1,0 +1,24 @@
+{
+  "name": "@subbox/auth",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {},
+  "dependencies": {
+    "@subbox/db": "workspace:*",
+    "@subbox/env": "workspace:*",
+    "better-auth": "catalog:",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@subbox/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}
