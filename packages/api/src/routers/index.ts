@@ -3,6 +3,7 @@ import { syncRouter } from "./sync";
 import { subscriptionsRouter } from "./subscriptions";
 import { categoriesRouter } from "./categories";
 import { analyticsRouter } from "./analytics";
+import { channelsRouter } from "./channels";
 
 export const appRouter = router({
   healthCheck: publicProcedure.query(() => {
@@ -18,5 +19,6 @@ export const appRouter = router({
   subscriptions: subscriptionsRouter,
   categories: categoriesRouter,
   analytics: analyticsRouter,
+  channels: channelsRouter,
 });
 export type AppRouter = typeof appRouter;

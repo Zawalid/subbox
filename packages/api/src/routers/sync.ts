@@ -1,10 +1,11 @@
 import { db } from "@subbox/db";
-import { channels, subscriptions, syncMetadata, account } from "@subbox/db/schema/index";
+import { channels, subscriptions, syncMetadata, account, videos } from "@subbox/db/schema/index";
 import {
   fetchUserSubscriptions,
   fetchChannelDetails,
-  enrichChannelsWithLastVideoDate,
+  enrichChannelsWithRecentVideos,
   computeSubscriptionStatus,
+  computeUploadFrequency,
 } from "../services/youtube";
 import { protectedProcedure, router } from "../index";
 import { eq, and } from "drizzle-orm";
@@ -27,10 +28,8 @@ export const syncRouter = router({
   importSubscriptions: protectedProcedure.mutation(async ({ ctx }) => {
     const userId = ctx.session.user.id;
 
-    // Get the user's Google access token from the account table
     const accountRecord = await db.query.account.findFirst({
-      where: (a) =>
-        and(eq(a.userId, userId), eq(a.providerId, "google")),
+      where: (a) => and(eq(a.userId, userId), eq(a.providerId, "google")),
     });
 
     if (!accountRecord?.accessToken) {
@@ -40,14 +39,12 @@ export const syncRouter = router({
       });
     }
 
-    // Check if token is expired and needs refresh
     let accessToken = accountRecord.accessToken;
     if (
       accountRecord.accessTokenExpiresAt &&
       accountRecord.accessTokenExpiresAt < new Date() &&
       accountRecord.refreshToken
     ) {
-      // Attempt OAuth token refresh
       try {
         const refreshResponse = await fetch("https://oauth2.googleapis.com/token", {
           method: "POST",
@@ -60,14 +57,14 @@ export const syncRouter = router({
           }),
         });
         if (refreshResponse.ok) {
-          const tokens = await refreshResponse.json() as { access_token: string; expires_in: number };
+          const tokens = (await refreshResponse.json()) as {
+            access_token: string;
+            expires_in: number;
+          };
           const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
           await db
             .update(account)
-            .set({
-              accessToken: tokens.access_token,
-              accessTokenExpiresAt: expiresAt,
-            })
+            .set({ accessToken: tokens.access_token, accessTokenExpiresAt: expiresAt })
             .where(and(eq(account.userId, userId), eq(account.providerId, "google")));
           accessToken = tokens.access_token;
         }
@@ -76,7 +73,6 @@ export const syncRouter = router({
       }
     }
 
-    // Update sync status to running
     const existingMeta = await db.query.syncMetadata.findFirst({
       where: eq(syncMetadata.userId, userId),
     });
@@ -95,14 +91,10 @@ export const syncRouter = router({
     }
 
     try {
-      // Fetch subscriptions from YouTube
       const ytSubscriptions = await fetchUserSubscriptions(accessToken);
-
-      // Fetch channel details in batches (includes uploadsPlaylistId via contentDetails)
       const channelIds = ytSubscriptions.map((s) => s.channelId);
       const rawChannelDetails = await fetchChannelDetails(channelIds);
-      // Enrich with lastVideoDate (one playlistItems call per channel)
-      const channelDetails = await enrichChannelsWithLastVideoDate(rawChannelDetails);
+      const channelDetails = await enrichChannelsWithRecentVideos(rawChannelDetails);
       const channelDetailsMap = new Map(channelDetails.map((c) => [c.id, c]));
 
       let syncedCount = 0;
@@ -125,6 +117,7 @@ export const syncRouter = router({
               name: details?.name ?? ytSub.channelName,
               description: details?.description ?? ytSub.description,
               thumbnail: details?.thumbnail ?? ytSub.thumbnail,
+              bannerUrl: details?.bannerUrl ?? null,
               customUrl: details?.customUrl,
               country: details?.country,
               subscriberCount: details?.subscriberCount,
@@ -141,6 +134,7 @@ export const syncRouter = router({
             name: details?.name ?? ytSub.channelName,
             description: details?.description ?? ytSub.description,
             thumbnail: details?.thumbnail ?? ytSub.thumbnail,
+            bannerUrl: details?.bannerUrl ?? null,
             customUrl: details?.customUrl,
             country: details?.country,
             subscriberCount: details?.subscriberCount,
@@ -150,18 +144,42 @@ export const syncRouter = router({
           });
         }
 
-        // Check for existing subscription
+        // Upsert recent videos
+        if (details?.recentVideos && details.recentVideos.length > 0) {
+          for (const video of details.recentVideos) {
+            const existingVideo = await db.query.videos.findFirst({
+              where: eq(videos.youtubeVideoId, video.videoId),
+            });
+            if (!existingVideo) {
+              await db.insert(videos).values({
+                id: generateId(),
+                channelId,
+                youtubeVideoId: video.videoId,
+                title: video.title,
+                thumbnailUrl: video.thumbnailUrl,
+                publishedAt: new Date(video.publishedAt),
+              });
+            }
+          }
+        }
+
+        // Compute upload frequency from recent video dates
+        const videoDates = (details?.recentVideos ?? [])
+          .map((v) => new Date(v.publishedAt))
+          .filter((d) => !isNaN(d.getTime()));
+        const uploadFrequency = computeUploadFrequency(videoDates);
+
+        const lastVideoDate = details?.lastVideoDate
+          ? new Date(details.lastVideoDate)
+          : null;
+        const status = computeSubscriptionStatus(lastVideoDate);
+
         const existingSub = await db.query.subscriptions.findFirst({
           where: and(
             eq(subscriptions.userId, userId),
             eq(subscriptions.channelId, channelId),
           ),
         });
-
-        const lastVideoDate = details?.lastVideoDate
-          ? new Date(details.lastVideoDate)
-          : null;
-        const status = computeSubscriptionStatus(lastVideoDate);
 
         if (!existingSub) {
           await db.insert(subscriptions).values({
@@ -170,18 +188,18 @@ export const syncRouter = router({
             channelId,
             subscribedAt: ytSub.subscribedAt ? new Date(ytSub.subscribedAt) : null,
             lastVideoDate,
+            uploadFrequency,
             status,
           });
           syncedCount++;
         } else {
           await db
             .update(subscriptions)
-            .set({ status, lastVideoDate })
+            .set({ status, lastVideoDate, uploadFrequency })
             .where(eq(subscriptions.id, existingSub.id));
         }
       }
 
-      // Update sync metadata
       await db
         .update(syncMetadata)
         .set({

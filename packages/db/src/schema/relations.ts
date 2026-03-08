@@ -4,10 +4,19 @@ import { user, session, account } from "./auth";
 import { channels } from "./channels";
 import { subscriptions } from "./subscriptions";
 import { categories, channelCategories } from "./categories";
+import { videos } from "./videos";
 
 export const channelRelations = relations(channels, ({ many }) => ({
   subscriptions: many(subscriptions),
   channelCategories: many(channelCategories),
+  videos: many(videos),
+}));
+
+export const videoRelations = relations(videos, ({ one }) => ({
+  channel: one(channels, {
+    fields: [videos.channelId],
+    references: [channels.id],
+  }),
 }));
 
 export const subscriptionRelations = relations(subscriptions, ({ one, many }) => ({

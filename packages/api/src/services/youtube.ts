@@ -14,11 +14,19 @@ export interface YouTubeSubscription {
   subscribedAt?: string;
 }
 
+export interface RecentVideo {
+  videoId: string;
+  title: string;
+  thumbnailUrl: string;
+  publishedAt: string;
+}
+
 export interface YouTubeChannelDetails {
   id: string;
   name: string;
   description: string;
   thumbnail: string;
+  bannerUrl?: string;
   customUrl?: string;
   country?: string;
   subscriberCount?: string;
@@ -27,6 +35,7 @@ export interface YouTubeChannelDetails {
   publishedAt?: string;
   lastVideoDate?: string;
   uploadsPlaylistId?: string;
+  recentVideos?: RecentVideo[];
 }
 
 const YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3";
@@ -96,33 +105,55 @@ export async function fetchUserSubscriptions(
   return subscriptions;
 }
 
-export async function fetchLastVideoDate(
+export async function fetchRecentVideos(
   uploadsPlaylistId: string,
-): Promise<string | undefined> {
+  maxResults = 6,
+): Promise<RecentVideo[]> {
   const url = new URL(`${YOUTUBE_API_BASE}/playlistItems`);
   url.searchParams.set("part", "snippet");
   url.searchParams.set("playlistId", uploadsPlaylistId);
-  url.searchParams.set("maxResults", "1");
+  url.searchParams.set("maxResults", String(maxResults));
   url.searchParams.set("key", env.YOUTUBE_API_KEY);
 
   const response = await fetch(url.toString());
-  if (!response.ok) return undefined;
+  if (!response.ok) return [];
 
   const data = (await response.json()) as {
-    items?: Array<{ snippet: { publishedAt: string } }>;
+    items?: Array<{
+      snippet: {
+        resourceId: { videoId: string };
+        title: string;
+        publishedAt: string;
+        thumbnails: {
+          high?: { url: string };
+          medium?: { url: string };
+          default?: { url: string };
+        };
+      };
+    }>;
   };
 
-  return data.items?.[0]?.snippet.publishedAt;
+  return (data.items ?? []).map((item) => ({
+    videoId: item.snippet.resourceId.videoId,
+    title: item.snippet.title,
+    publishedAt: item.snippet.publishedAt,
+    thumbnailUrl:
+      item.snippet.thumbnails.high?.url ??
+      item.snippet.thumbnails.medium?.url ??
+      item.snippet.thumbnails.default?.url ??
+      "",
+  }));
 }
 
-export async function enrichChannelsWithLastVideoDate(
+export async function enrichChannelsWithRecentVideos(
   channels: YouTubeChannelDetails[],
 ): Promise<YouTubeChannelDetails[]> {
   const enriched = await Promise.allSettled(
     channels.map(async (channel) => {
       if (!channel.uploadsPlaylistId) return channel;
-      const lastVideoDate = await fetchLastVideoDate(channel.uploadsPlaylistId);
-      return { ...channel, lastVideoDate };
+      const recentVideos = await fetchRecentVideos(channel.uploadsPlaylistId, 6);
+      const lastVideoDate = recentVideos[0]?.publishedAt;
+      return { ...channel, recentVideos, lastVideoDate };
     }),
   );
 
@@ -141,7 +172,7 @@ export async function fetchChannelDetails(
 
   for (const chunk of chunks) {
     const url = new URL(`${YOUTUBE_API_BASE}/channels`);
-    url.searchParams.set("part", "snippet,statistics,contentDetails");
+    url.searchParams.set("part", "snippet,statistics,contentDetails,brandingSettings");
     url.searchParams.set("id", chunk.join(","));
     url.searchParams.set("key", env.YOUTUBE_API_KEY);
 
@@ -177,6 +208,11 @@ export async function fetchChannelDetails(
             uploads?: string;
           };
         };
+        brandingSettings?: {
+          image?: {
+            bannerExternalUrl?: string;
+          };
+        };
       }>;
     };
 
@@ -190,6 +226,7 @@ export async function fetchChannelDetails(
           item.snippet.thumbnails.medium?.url ??
           item.snippet.thumbnails.default?.url ??
           "",
+        bannerUrl: item.brandingSettings?.image?.bannerExternalUrl,
         customUrl: item.snippet.customUrl,
         country: item.snippet.country,
         publishedAt: item.snippet.publishedAt,
@@ -204,12 +241,20 @@ export async function fetchChannelDetails(
   return results;
 }
 
-function chunkArray<T>(array: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < array.length; i += size) {
-    chunks.push(array.slice(i, i + size));
+export function computeUploadFrequency(dates: Date[]): string {
+  if (dates.length < 2) return "Unknown";
+  const sorted = [...dates].sort((a, b) => b.getTime() - a.getTime());
+  const gaps: number[] = [];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    gaps.push((sorted[i]!.getTime() - sorted[i + 1]!.getTime()) / (1000 * 60 * 60 * 24));
   }
-  return chunks;
+  const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  if (avg <= 1.5)  return "Daily";
+  if (avg <= 4)    return "2-3x / week";
+  if (avg <= 10)   return "Weekly";
+  if (avg <= 20)   return "Bi-weekly";
+  if (avg <= 50)   return "Monthly";
+  return "Irregular";
 }
 
 export function computeSubscriptionStatus(
@@ -222,4 +267,12 @@ export function computeSubscriptionStatus(
   if (diffMonths > 12) return "dormant";
   if (diffMonths > 6) return "inactive";
   return "active";
+}
+
+export function chunkArray<T>(array: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+  return chunks;
 }

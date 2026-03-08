@@ -14,6 +14,7 @@ export const channels = pgTable(
     videoCount: text("video_count"),
     viewCount: text("view_count"),
     publishedAt: timestamp("published_at"),
+    bannerUrl: text("banner_url"),
     lastVideoDate: timestamp("last_video_date"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
