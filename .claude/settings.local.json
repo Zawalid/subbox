@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm dlx shadcn@latest add:*)",
+      "Bash(pnpm add:*)",
+      "Bash(/dev/null:*)",
+      "Bash(pnpm --filter web exec tsc:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "WebFetch(domain:api.svgl.app)"
+    ]
+  }
+}

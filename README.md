@@ -1,72 +1,97 @@
-# subbox
+# Subbox — YouTube Subscription Manager
 
-This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack that combines Next.js, Hono, TRPC, and more.
+A productivity platform for managing YouTube subscriptions, inspired by Raindrop.io.
 
 ## Features
 
-- **TypeScript** - For type safety and improved developer experience
-- **Next.js** - Full-stack React framework
-- **TailwindCSS** - Utility-first CSS for rapid UI development
-- **shadcn/ui** - Reusable UI components
-- **Hono** - Lightweight, performant server framework
-- **tRPC** - End-to-end type-safe APIs
-- **Bun** - Runtime environment
-- **Drizzle** - TypeScript-first ORM
-- **PostgreSQL** - Database engine
-- **Authentication** - Better-Auth
-- **Turborepo** - Optimized monorepo build system
+- **YouTube OAuth** — Sign in with Google and import all subscriptions
+- **Subscription Dashboard** — Grid and table view of all channels
+- **Channel Categorization** — Organize channels into custom color-coded categories
+- **Analytics** — See active, inactive, and dormant channel stats
+- **Cleanup Tool** — Identify and remove dormant/inactive channels
+- **Bulk Actions** — Select multiple channels for batch operations
+- **Browser Extension** — Overlay on YouTube channel pages
 
-## Getting Started
+## Tech Stack
 
-First, install the dependencies:
+- **TypeScript** everywhere
+- **Next.js** — Web dashboard
+- **Hono + tRPC** — Type-safe API
+- **Drizzle ORM + PostgreSQL** — Database
+- **Better Auth** — Authentication with Google OAuth
+- **WXT + React** — Browser extension
+- **Turborepo + pnpm** — Monorepo
+
+## Setup
+
+### 1. Install dependencies
 
 ```bash
 pnpm install
 ```
 
-## Database Setup
+### 2. Configure environment
 
-This project uses PostgreSQL with Drizzle ORM.
-
-1. Make sure you have a PostgreSQL database set up.
-2. Update your `apps/server/.env` file with your PostgreSQL connection details.
-
-3. Apply the schema to your database:
+Copy `.env.example` to `apps/server/.env` and fill in:
 
 ```bash
-pnpm run db:push
+cp .env.example apps/server/.env
 ```
 
-Then, run the development server:
+Required:
+- `DATABASE_URL` — PostgreSQL connection string
+- `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` — [Google Cloud Console](https://console.cloud.google.com)
+  - Enable YouTube Data API v3
+  - Add OAuth scope: `https://www.googleapis.com/auth/youtube.readonly`
+  - Add authorized redirect: `http://localhost:3000/api/auth/callback/google`
+- `YOUTUBE_API_KEY` — YouTube Data API key
+
+Also set `apps/web/.env`:
+```
+NEXT_PUBLIC_SERVER_URL=http://localhost:3000
+```
+
+### 3. Setup database
 
 ```bash
-pnpm run dev
+pnpm db:push
+# or run migrations
+pnpm db:migrate
 ```
 
-Open [http://localhost:3001](http://localhost:3001) in your browser to see the web application.
-The API is running at [http://localhost:3000](http://localhost:3000).
+### 4. Start development
+
+```bash
+pnpm dev
+```
+
+- Web: [http://localhost:3001](http://localhost:3001)
+- API: [http://localhost:3000](http://localhost:3000)
 
 ## Project Structure
 
 ```
 subbox/
 ├── apps/
-│   ├── web/         # Frontend application (Next.js)
-│   └── server/      # Backend API (Hono, TRPC)
-├── packages/
-│   ├── api/         # API layer / business logic
-│   ├── auth/        # Authentication configuration & logic
-│   └── db/          # Database schema & queries
+│   ├── web/          # Next.js dashboard
+│   ├── server/       # Hono API server
+│   └── extension/    # WXT browser extension
+└── packages/
+    ├── api/          # tRPC routers & services
+    ├── auth/         # Better Auth config
+    ├── db/           # Drizzle schema & migrations
+    ├── env/          # Environment validation
+    └── config/       # Shared TypeScript config
 ```
 
 ## Available Scripts
 
-- `pnpm run dev`: Start all applications in development mode
-- `pnpm run build`: Build all applications
-- `pnpm run dev:web`: Start only the web application
-- `pnpm run dev:server`: Start only the server
-- `pnpm run check-types`: Check TypeScript types across all apps
-- `pnpm run db:push`: Push schema changes to database
-- `pnpm run db:generate`: Generate database client/types
-- `pnpm run db:migrate`: Run database migrations
-- `pnpm run db:studio`: Open database studio UI
+| Command | Description |
+|---------|-------------|
+| `pnpm dev` | Start all apps in development |
+| `pnpm build` | Build all apps |
+| `pnpm db:push` | Push schema to database |
+| `pnpm db:generate` | Generate migrations |
+| `pnpm db:migrate` | Run migrations |
+| `pnpm db:studio` | Open Drizzle Studio |
+| `pnpm check-types` | TypeScript type check |
